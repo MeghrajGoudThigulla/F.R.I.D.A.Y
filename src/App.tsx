@@ -250,11 +250,18 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-500 font-mono">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <span>F.R.I.D.A.Y • Universal Career Copilot & Evidence-First Job Matcher</span>
-          <span>Zero-Capital Local-First Vault • $0 Fixed Operating Cost</span>
+      {/* Footer & License Attributions */}
+      <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-xs text-slate-500 font-mono">
+        <div className="max-w-7xl mx-auto px-4 space-y-3">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-400">
+            <span>F.R.I.D.A.Y • Universal Career Copilot & Evidence-First Job Matcher</span>
+            <span>Zero-Capital Local-First Vault • $0 Fixed Operating Cost</span>
+          </div>
+          <div className="pt-2 border-t border-slate-900/80 text-[10px] text-slate-600 leading-relaxed text-center sm:text-left">
+            <p>
+              <strong>Attribution Notices:</strong> This tool incorporates information from the <strong>O*NET 31.0 Database</strong> by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA), used under the CC BY 4.0 license. O*NET® is a trademark of USDOL/ETA. This service uses the <strong>ESCO classification</strong> of the European Commission.
+            </p>
+          </div>
         </div>
       </footer>
 

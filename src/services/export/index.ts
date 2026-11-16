@@ -1,5 +1,14 @@
-// F.R.I.D.A.Y - Closed-Loop Document Exporter & ATS Text-Layer Verifier
+// F.R.I.D.A.Y - Closed-Loop Document Exporter & Real Text-Layer ATS Verifier
+// Conforming to PRD v3.0 QA-06 & QA-07 / PRD v4.0 R-09
+// Polyfill for Uint8Array.prototype.toHex in environments where it is not yet native
+if (typeof Uint8Array !== 'undefined' && !(Uint8Array.prototype as any).toHex) {
+  (Uint8Array.prototype as any).toHex = function () {
+    return Array.from(this).map((b: any) => b.toString(16).padStart(2, '0')).join('');
+  };
+}
+
 import { jsPDF } from 'jspdf';
+import * as pdfjsLib from 'pdfjs-dist';
 import {
   Document,
   Packer,
@@ -15,7 +24,9 @@ export interface ExportVerificationResult {
   pageCount: number;
   isWithinPageLimits: boolean;
   contactTextFound: boolean;
+  candidateNameFound: boolean;
   readingOrderValid: boolean;
+  federalComplianceWarnings: string[];
   warnings: string[];
 }
 
@@ -23,7 +34,7 @@ export interface ExportVerificationResult {
 export function generateAtsPdf(
   profile: CandidateProfile,
   tailoredDoc: TailoredDocument
-): { doc: jsPDF; verification: ExportVerificationResult } {
+): jsPDF {
   const doc = new jsPDF({
     unit: 'pt',
     format: 'letter'
@@ -124,7 +135,7 @@ export function generateAtsPdf(
     cursorY += bulletLines.length * 13 + 8;
   }
 
-  // Section 4: Work Authorization & Availability
+  // Section 4: Work Authorization & Operational Parameters
   if (cursorY > doc.internal.pageSize.getHeight() - 70) {
     doc.addPage();
     cursorY = 50;
@@ -142,34 +153,97 @@ export function generateAtsPdf(
   const authStatement = `Work Authorization: ${profile.workAuthorization || 'Authorized'} | Total Verified Experience: ${profile.yearsOfExperience} Years`;
   doc.text(authStatement, margin, cursorY);
 
-  // Closed-Loop ATS Text-Layer Verification (PRD v3.0 QA-06 & QA-07 / v4.0 R-09)
-  const totalPages = doc.getNumberOfPages();
-  const warnings: string[] = [];
-  let isWithinLimits = true;
-
-  if (tailoredDoc.templateId === 'usajobs_federal') {
-    // Federal USAJobs rule: Must be <= 2 pages
-    if (totalPages > 2) {
-      isWithinLimits = false;
-      warnings.push(`Federal USAJobs requirement violation: Export exceeds 2 pages (currently ${totalPages} pages). Content must be trimmed to satisfy OPM standards.`);
-    }
-  } else if (totalPages > 2) {
-    warnings.push(`Document is ${totalPages} pages. Consider trimming bullets for single-page or two-page standard applications.`);
-  }
-
-  const verification: ExportVerificationResult = {
-    passed: isWithinLimits && warnings.length === 0,
-    pageCount: totalPages,
-    isWithinPageLimits: isWithinLimits,
-    contactTextFound: Boolean(profile.contact.email),
-    readingOrderValid: true,
-    warnings
-  };
-
-  return { doc, verification };
+  return doc;
 }
 
-// 2. Generate Editable ATS-Compliant DOCX
+// 2. Closed-Loop ATS Text-Layer Verifier (PRD v3.0 QA-06 & QA-07)
+// Re-extracts the actual text from the compiled PDF binary and verifies literal string presence and linear order
+export async function verifyCompiledPdfTextLayer(
+  doc: jsPDF,
+  profile: CandidateProfile,
+  tailoredDoc: TailoredDocument
+): Promise<ExportVerificationResult> {
+  const arrayBuffer = doc.output('arraybuffer');
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const totalPages = pdf.numPages;
+
+  let fullExtractedText = '';
+  for (let i = 1; i <= totalPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map((item: any) => item.str).join(' ');
+    fullExtractedText += pageText + '\n';
+  }
+
+  const warnings: string[] = [];
+  const federalWarnings: string[] = [];
+
+  // Check 1: Candidate Email in extracted text
+  const contactTextFound = fullExtractedText.toLowerCase().includes(profile.contact.email.toLowerCase());
+  if (!contactTextFound) {
+    warnings.push(`Contact email "${profile.contact.email}" was not found in the extracted PDF text layer.`);
+  }
+
+  // Check 2: Candidate Name in extracted text
+  const candidateNameFound = fullExtractedText.toLowerCase().includes(profile.name.toLowerCase());
+  if (!candidateNameFound) {
+    warnings.push(`Candidate name "${profile.name}" was not found in the extracted PDF text layer.`);
+  }
+
+  // Check 3: Linear Reading Order of headings
+  const summaryIdx = fullExtractedText.indexOf('PROFESSIONAL SUMMARY');
+  const expIdx = fullExtractedText.indexOf('VERIFIED EXPERIENCE');
+  const authIdx = fullExtractedText.indexOf('WORK AUTHORIZATION');
+
+  let readingOrderValid = true;
+  if (summaryIdx !== -1 && expIdx !== -1 && summaryIdx > expIdx) {
+    readingOrderValid = false;
+    warnings.push('Reading order violation: Summary rendered after Experience section.');
+  }
+  if (expIdx !== -1 && authIdx !== -1 && expIdx > authIdx) {
+    readingOrderValid = false;
+    warnings.push('Reading order violation: Experience rendered after Work Authorization section.');
+  }
+
+  // Check 4: Page Count Bounds
+  let isWithinLimits = true;
+  if (tailoredDoc.templateId === 'usajobs_federal') {
+    // Federal USAJobs rule (OPM limit: Max 2 pages)
+    if (totalPages > 2) {
+      isWithinLimits = false;
+      federalWarnings.push(`USAJobs federal template limit exceeded: Document is ${totalPages} pages. OPM rules strictly enforce max 2 pages.`);
+    }
+
+    // Federal compliance: Check for hours per week
+    const hasHoursPerWeek = /\b(?:hours\s+per\s+week|\d+\s*hrs\/wk|\d+\s*hours\/wk)\b/i.test(fullExtractedText);
+    if (!hasHoursPerWeek) {
+      federalWarnings.push('Federal compliance check: USAJobs resumes require specifying hours per week for past positions.');
+    }
+
+    // Federal compliance: Check for month and year formatted dates
+    const hasMonthYearDates = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\b/i.test(fullExtractedText);
+    if (!hasMonthYearDates) {
+      federalWarnings.push('Federal compliance check: USAJobs resumes require explicit month and year for all experience dates.');
+    }
+  } else if (totalPages > 2) {
+    warnings.push(`Document is ${totalPages} pages. Single or two-page format is recommended for standard ATS parsing.`);
+  }
+
+  const passed = contactTextFound && candidateNameFound && readingOrderValid && isWithinLimits && federalWarnings.length === 0;
+
+  return {
+    passed,
+    pageCount: totalPages,
+    isWithinPageLimits: isWithinLimits,
+    contactTextFound,
+    candidateNameFound,
+    readingOrderValid,
+    federalComplianceWarnings: federalWarnings,
+    warnings: [...warnings, ...federalWarnings]
+  };
+}
+
+// 3. Generate Editable ATS-Compliant DOCX
 export async function generateAtsDocxBlob(
   profile: CandidateProfile,
   tailoredDoc: TailoredDocument

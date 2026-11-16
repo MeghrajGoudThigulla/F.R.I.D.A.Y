@@ -1,4 +1,5 @@
-// F.R.I.D.A.Y - Deterministic Security Sanitizer & Anti-Fabrication Fact Gate
+// F.R.I.D.A.Y - Deterministic Security Sanitizer & Word-Boundary Anti-Fabrication Fact Gate
+// Conforming to PRD v3.0 §8.4 / PRD v4.0 R-08 ("Reformulate, NEVER fabricate")
 import type { EvidenceFact } from '../../types';
 
 export interface SanitizationResult {
@@ -9,13 +10,17 @@ export interface SanitizationResult {
   ghostJobFlags: string[];
 }
 
-// Pre-Eval Security Gate (ai-job-search & career-ops benchmarks)
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 1. Pre-Eval Security Gate (ai-job-search & career-ops benchmarks)
 export function sanitizeJobDescription(rawInput: string): SanitizationResult {
   const flags: string[] = [];
   let promptInjection = false;
   let hiddenCharsCount = 0;
 
-  // 1. Check for zero-width / invisible unicode characters often used for stealth injections
+  // Scan and strip zero-width / invisible unicode characters
   const zeroWidthRegex = /[\u200B-\u200D\uFEFF\u00A0\u202A-\u202E]/g;
   const matches = rawInput.match(zeroWidthRegex);
   if (matches) {
@@ -23,7 +28,7 @@ export function sanitizeJobDescription(rawInput: string): SanitizationResult {
   }
   let sanitized = rawInput.replace(zeroWidthRegex, ' ');
 
-  // 2. Scan for prompt injection patterns targeting LLMs
+  // Scan for prompt injection patterns
   const injectionPatterns = [
     /ignore\s+(?:all\s+)?previous\s+instructions/i,
     /system\s+directive\s*:/i,
@@ -42,12 +47,12 @@ export function sanitizeJobDescription(rawInput: string): SanitizationResult {
     }
   }
 
-  // 3. Scan for job legitimacy red flags (Ghost jobs, wire scams, suspicious PII requests)
+  // Scan for job legitimacy red flags (wire scams, equipment check scams)
   const scamPatterns = [
-    { regex: /\b(?:send|wire|transfer)\s+(?:money|funds|fee|crypto|bitcoin)\b/i, flag: 'Job demands upfront candidate payment/fee (high scam risk).' },
+    { regex: /\b(?:send|wire|transfer)\s+(?:money|funds|fee|crypto|bitcoin)\b/i, flag: 'Job demands upfront candidate payment/fee (scam indicator).' },
     { regex: /\b(?:purchase|buy)\s+your\s+own\s+(?:equipment|laptop|check)\b/i, flag: 'Mentions candidate purchasing equipment with reimbursement checks.' },
     { regex: /\bprovide\s+(?:ssn|social\s+security|bank\s+account|routing\s+number)\s+to\s+apply\b/i, flag: 'Suspicious request for banking details/SSN prior to formal interview.' },
-    { regex: /\b(?:telegram|whatsapp)\s+interview\s+only\b/i, flag: 'Interview strictly conducted via WhatsApp/Telegram without formal company channel.' }
+    { regex: /\b(?:telegram|whatsapp)\s+interview\s+only\b/i, flag: 'Interview strictly conducted via WhatsApp/Telegram without verified corporate channel.' }
   ];
 
   for (const item of scamPatterns) {
@@ -56,7 +61,7 @@ export function sanitizeJobDescription(rawInput: string): SanitizationResult {
     }
   }
 
-  // 4. Sanitize unsafe HTML or script tags
+  // Strip unsafe HTML / script tags
   sanitized = sanitized
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
@@ -71,7 +76,32 @@ export function sanitizeJobDescription(rawInput: string): SanitizationResult {
   };
 }
 
-// Deterministic Fact Gate (career-ops benchmark: "Reformulate, never fabricate")
+// 2. High-Risk Professional Credentials Registry
+export const HIGH_RISK_CREDENTIALS = [
+  'rn',
+  'registered nurse',
+  'enlc',
+  'bls',
+  'acls',
+  'pals',
+  'ccrn',
+  'cpa',
+  'cfa',
+  'pmp',
+  'pe',
+  'fe',
+  'md',
+  'bar admission',
+  'osha-10',
+  'osha-30',
+  'epa 608',
+  'cdl class a',
+  'cdl class b',
+  'secret clearance',
+  'top secret',
+  'ts/sci'
+];
+
 export interface FactCheckResult {
   sentence: string;
   status: 'SUPPORTED' | 'REVIEW_NEEDED' | 'BLOCKED';
@@ -79,6 +109,23 @@ export interface FactCheckResult {
   flaggedEntities: string[];
 }
 
+// Check if a discrete metric token exists in evidence using exact boundaries
+function isMetricSupportedInEvidence(metric: string, combinedEvidenceText: string): boolean {
+  // Clean metric for boundary comparison
+  const escaped = escapeRegex(metric);
+  // Match using word boundaries or symbol boundaries so \b5\b never matches 15 or 50
+  const boundaryPattern = new RegExp(`(?:^|[^0-9a-zA-Z])${escaped}(?:[^0-9a-zA-Z]|$)`, 'i');
+  return boundaryPattern.test(combinedEvidenceText);
+}
+
+// Check if a credential exists in evidence using word boundaries (preventing "concern" matching "rn")
+function isCredentialSupportedInEvidence(cred: string, combinedEvidenceText: string): boolean {
+  const escaped = escapeRegex(cred);
+  const boundaryPattern = new RegExp(`\\b${escaped}\\b`, 'i');
+  return boundaryPattern.test(combinedEvidenceText);
+}
+
+// Evaluates a single sentence against confirmed facts
 export function evaluateSentenceAgainstFacts(
   draftSentence: string,
   confirmedFacts: EvidenceFact[]
@@ -86,19 +133,17 @@ export function evaluateSentenceAgainstFacts(
   const combinedEvidenceText = confirmedFacts
     .filter(f => f.reviewState === 'CONFIRMED' || f.reviewState === 'CORRECTED')
     .map(f => `${f.statement} ${f.rawExcerpt}`)
-    .join(' ')
-    .toLowerCase();
+    .join(' ');
 
-  // Extract critical numerical claims: percentages, dollar values, multipliers, large counts
-  // e.g. "45%", "$1.2M", "3x", "500+", "10,000 users", "12 nurses"
-  const metricRegex = /\b(\$?\d+(?:\.\d+)?(?:k|m|b|%|x|\+)?)\b/gi;
-  const draftedMetrics = (draftSentence.match(metricRegex) || []).map(m => m.toLowerCase());
+  // 1. Extract quantitative claims: percentages, dollar amounts, multipliers, numerical counts
+  // e.g. "45%", "$1.2M", "3x", "500+", "15,000", "12"
+  const metricRegex = /\b(\$?\d+(?:,\d{3})*(?:\.\d+)?(?:[kmbx%+]|\+)?)(?![0-9a-zA-Z])/gi;
+  const matches = draftSentence.match(metricRegex) || [];
 
-  // Filter out trivial numbers like years 2020-2026 if contextually common
-  const criticalMetrics = draftedMetrics.filter(m => {
-    const num = parseInt(m.replace(/[^0-9]/g, ''), 10);
-    // Ignore stand-alone years 1990-2030 or small integers like 1, 2
-    if (!isNaN(num) && num >= 1990 && num <= 2030) return false;
+  const criticalMetrics = matches.filter(m => {
+    const rawNumber = parseInt(m.replace(/[^0-9]/g, ''), 10);
+    // Ignore common standard years 1990-2030 or single digit numbers 1 or 2
+    if (!isNaN(rawNumber) && rawNumber >= 1990 && rawNumber <= 2030) return false;
     if (m === '1' || m === '2') return false;
     return true;
   });
@@ -106,18 +151,19 @@ export function evaluateSentenceAgainstFacts(
   const unsupportedEntities: string[] = [];
 
   for (const metric of criticalMetrics) {
-    // Check if metric appears literally in candidate evidence
-    if (!combinedEvidenceText.includes(metric)) {
+    if (!isMetricSupportedInEvidence(metric, combinedEvidenceText)) {
       unsupportedEntities.push(metric);
     }
   }
 
-  // Check for unauthorized high-risk credentials/titles: CPA, RN, PMP, Secret Clearance, MD
-  const credentialRegex = /\b(cpa|rn|pmp|cfa|pe|md|bls|acls|osha-?30|cdl|secret\s+clearance)\b/gi;
-  const draftedCreds = (draftSentence.match(credentialRegex) || []).map(c => c.toLowerCase());
-  for (const cred of draftedCreds) {
-    if (!combinedEvidenceText.includes(cred.toLowerCase())) {
-      unsupportedEntities.push(cred.toUpperCase());
+  // 2. Check for unauthorized high-risk credentials using strict word boundaries
+  for (const cred of HIGH_RISK_CREDENTIALS) {
+    const credRegex = new RegExp(`\\b${escapeRegex(cred)}\\b`, 'i');
+    if (credRegex.test(draftSentence)) {
+      // Must exist in confirmed evidence with word boundary
+      if (!isCredentialSupportedInEvidence(cred, combinedEvidenceText)) {
+        unsupportedEntities.push(cred.toUpperCase());
+      }
     }
   }
 
@@ -125,18 +171,18 @@ export function evaluateSentenceAgainstFacts(
     return {
       sentence: draftSentence,
       status: 'BLOCKED',
-      justification: `Contains unverified metric(s) or credential(s) not found in confirmed candidate evidence: [${unsupportedEntities.join(', ')}]. Export blocked until verified or removed.`,
+      justification: `Contains unverified metric(s) or credential(s) not in confirmed candidate evidence: [${unsupportedEntities.join(', ')}]. Export blocked until verified or removed.`,
       flaggedEntities: unsupportedEntities
     };
   }
 
-  // Soft check for subjective executive claims without explicit proof ("single-handedly", "spearheaded", "expert")
-  const exaggeratedClaims = /\b(single-handedly|expert\s+in|world-class|undisputed)\b/i;
-  if (exaggeratedClaims.test(draftSentence)) {
+  // 3. Superlatives check
+  const superlativeRegex = /\b(single-handedly|expert\s+in|world-class|undisputed|flawless|100%\s+active\s+standing|zero\s+safety\s+infractions)\b/i;
+  if (superlativeRegex.test(draftSentence)) {
     return {
       sentence: draftSentence,
       status: 'REVIEW_NEEDED',
-      justification: 'Contains bold or superlative assertion that may require candidate review before external submission.',
+      justification: 'Contains superlative assertion that requires candidate review before external submission.',
       flaggedEntities: ['Superlative claim']
     };
   }
@@ -144,7 +190,56 @@ export function evaluateSentenceAgainstFacts(
   return {
     sentence: draftSentence,
     status: 'SUPPORTED',
-    justification: 'All quantitative metrics and claims are grounded in confirmed evidence.',
+    justification: 'All quantitative metrics and credentials are substantiated by confirmed evidence.',
     flaggedEntities: []
+  };
+}
+
+// Comprehensive Fact Gate that inspects ALL deliverable texts (PRD v3.0 §8.4)
+export function evaluateFullDocumentAgainstFacts(
+  doc: {
+    headline: string;
+    summary: string;
+    bullets: { draft: string }[];
+    coverLetter?: string;
+    outreachPitch?: string;
+    interviewTalkingPoints?: string[];
+  },
+  confirmedFacts: EvidenceFact[]
+): {
+  isFactGatePassed: boolean;
+  blockedCount: number;
+  reviewNeededCount: number;
+  issues: string[];
+} {
+  const allTexts: { source: string; text: string }[] = [
+    { source: 'Headline', text: doc.headline },
+    { source: 'Summary', text: doc.summary },
+    ...doc.bullets.map((b, i) => ({ source: `Bullet #${i + 1}`, text: b.draft })),
+    ...(doc.coverLetter ? [{ source: 'Cover Letter', text: doc.coverLetter }] : []),
+    ...(doc.outreachPitch ? [{ source: 'Outreach Pitch', text: doc.outreachPitch }] : []),
+    ...(doc.interviewTalkingPoints ? doc.interviewTalkingPoints.map((tp, i) => ({ source: `STAR Point #${i + 1}`, text: tp })) : [])
+  ];
+
+  let blockedCount = 0;
+  let reviewNeededCount = 0;
+  const issues: string[] = [];
+
+  for (const item of allTexts) {
+    const result = evaluateSentenceAgainstFacts(item.text, confirmedFacts);
+    if (result.status === 'BLOCKED') {
+      blockedCount++;
+      issues.push(`[${item.source}] ${result.justification}`);
+    } else if (result.status === 'REVIEW_NEEDED') {
+      reviewNeededCount++;
+      issues.push(`[${item.source}] ${result.justification}`);
+    }
+  }
+
+  return {
+    isFactGatePassed: blockedCount === 0,
+    blockedCount,
+    reviewNeededCount,
+    issues
   };
 }

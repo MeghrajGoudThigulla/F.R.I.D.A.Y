@@ -1,4 +1,11 @@
 // F.R.I.D.A.Y - Client-Side Resume & Document Ingestion Parser
+// Polyfill for Uint8Array.prototype.toHex in environments where it is not yet native
+if (typeof Uint8Array !== 'undefined' && !(Uint8Array.prototype as any).toHex) {
+  (Uint8Array.prototype as any).toHex = function () {
+    return Array.from(this).map((b: any) => b.toString(16).padStart(2, '0')).join('');
+  };
+}
+
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import type { CandidateProfile, EvidenceFact, CareerClusterId } from '../../types';

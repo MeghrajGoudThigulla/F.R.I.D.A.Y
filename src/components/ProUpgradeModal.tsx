@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { X, Sparkles, Check, ExternalLink, ShieldCheck } from 'lucide-react';
 import {
   triggerProCheckout,
-  validateProLicenseKey
+  verifyLicenseKey,
+  OFFICIAL_DEMO_PRO_LICENSE
 } from '../services/monetization';
 import type { AISettings } from '../types';
 
@@ -26,14 +27,14 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   if (!isOpen) return null;
 
   const handleActivate = async () => {
-    const res = validateProLicenseKey(licenseKey);
+    const res = await verifyLicenseKey(licenseKey);
     if (res.isValid) {
       await onSaveSettings({
         ...settings,
         isProUnlocked: true,
         proLicenseKey: licenseKey.trim()
       });
-      setMsg({ text: 'Congratulations! Pro Career Pass activated.', isError: false });
+      setMsg({ text: 'Congratulations! Pro Career Pass verified and activated.', isError: false });
       setTimeout(onClose, 1500);
     } else {
       setMsg({ text: res.message, isError: true });
@@ -119,22 +120,30 @@ export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
 
         {/* License Key Activation Input */}
         <div className="pt-3 border-t border-slate-800 space-y-2">
-          <label className="block text-[11px] font-mono text-slate-400">
-            Already have a license key? (Try test code: <code className="text-cyan-300">FRIDAY-PRO-DEMO-2026</code>)
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="block text-[11px] font-mono text-slate-400">
+              Paste cryptographically signed license token:
+            </label>
+            <button
+              onClick={() => setLicenseKey(OFFICIAL_DEMO_PRO_LICENSE)}
+              className="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 underline"
+            >
+              Insert Demo Token
+            </button>
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="FRIDAY-PRO-XXXX-XXXX"
+              placeholder="Paste license token..."
               value={licenseKey}
               onChange={e => setLicenseKey(e.target.value)}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white font-mono uppercase"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white font-mono"
             />
             <button
               onClick={handleActivate}
               className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"
             >
-              Activate
+              Verify & Activate
             </button>
           </div>
           {msg && (

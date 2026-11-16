@@ -30,6 +30,7 @@ import { evaluateSentenceAgainstFacts } from '../services/security';
 import {
   generateAtsPdf,
   generateAtsDocxBlob,
+  verifyCompiledPdfTextLayer,
   downloadPdf,
   downloadBlob
 } from '../services/export';
@@ -110,21 +111,30 @@ export const TailoringView: React.FC<TailoringViewProps> = ({
     setEditingBulletId(null);
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (!profile || !tailoredDoc) return;
     if (!tailoredDoc.isFactGatePassed) {
       setExportWarning('Export blocked by Fact Gate: Document contains unverified claims or metrics. Edit or remove blocked items to proceed.');
       return;
     }
 
-    const { doc, verification } = generateAtsPdf(profile, tailoredDoc);
-    if (!verification.isWithinPageLimits) {
-      setExportWarning(`Warning: ${verification.warnings.join(' ')}`);
-    } else {
-      setExportWarning(null);
+    try {
+      const doc = generateAtsPdf(profile, tailoredDoc);
+      const verification = await verifyCompiledPdfTextLayer(doc, profile, tailoredDoc);
+
+      if (!verification.passed) {
+        setExportWarning(`ATS Text-Layer Verification Notice: ${verification.warnings.join(' | ')}`);
+        if (!verification.isWithinPageLimits) {
+          return; // Block download if strict hard page limit is violated (e.g. USAJobs >2 pages)
+        }
+      } else {
+        setExportWarning(null);
+      }
+      const filename = `${profile.name.replace(/\s+/g, '_')}_${tailoredDoc.company.replace(/\s+/g, '_')}_ATS_Resume.pdf`;
+      downloadPdf(doc, filename);
+    } catch (err: any) {
+      setExportWarning(`Verification error: ${err.message}`);
     }
-    const filename = `${profile.name.replace(/\s+/g, '_')}_${tailoredDoc.company.replace(/\s+/g, '_')}_ATS_Resume.pdf`;
-    downloadPdf(doc, filename);
   };
 
   const handleExportDocx = async () => {

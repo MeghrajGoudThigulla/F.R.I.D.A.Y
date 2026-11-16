@@ -18,10 +18,12 @@ import type { AISettings } from '../types';
 import {
   exportEncryptedBackup,
   importAndRestoreBackup,
-  clearAllLocalVault
+  clearAllLocalVault,
+  validatePassphraseStrength
 } from '../db';
 import {
-  validateProLicenseKey,
+  verifyLicenseKey,
+  OFFICIAL_DEMO_PRO_LICENSE,
   PAYMENT_LINKS,
   triggerProCheckout
 } from '../services/monetization';
@@ -64,7 +66,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleActivateLicense = async () => {
-    const res = validateProLicenseKey(licenseInput);
+    const res = await verifyLicenseKey(licenseInput);
     if (res.isValid) {
       await onSaveSettings({
         ...settings,
@@ -78,8 +80,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleExportBackup = async () => {
-    if (!passphrase.trim()) {
-      alert('Please enter a secure passphrase to encrypt your backup.');
+    const check = validatePassphraseStrength(passphrase);
+    if (!check.isValid) {
+      alert(check.error || 'Please enter a valid passphrase.');
       return;
     }
     try {
@@ -284,16 +287,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Enter license key (e.g. FRIDAY-PRO-DEMO-2026)"
+              placeholder="Paste cryptographically signed license token..."
               value={licenseInput}
               onChange={e => setLicenseInput(e.target.value)}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white font-mono uppercase"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white font-mono"
             />
+            <button
+              onClick={() => setLicenseInput(OFFICIAL_DEMO_PRO_LICENSE)}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 text-cyan-400 hover:text-cyan-300 text-[11px] font-mono border border-slate-700"
+              title="Insert Signed Test Token"
+            >
+              Test Token
+            </button>
             <button
               onClick={handleActivateLicense}
               className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"
             >
-              Activate Key
+              Verify & Activate
             </button>
             <button
               onClick={() => triggerProCheckout('polar')}

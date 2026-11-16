@@ -1,4 +1,5 @@
 // F.R.I.D.A.Y - 3-Tier AI Router & Deterministic Drafter-Reviewer Engine
+// Conforming to PRD v3.0 §8 / PRD v4.0 (Zero fabricated claims, header-based API keys)
 import type {
   CandidateProfile,
   EvidenceFact,
@@ -8,7 +9,7 @@ import type {
   StarInterviewQuestion,
   AISettings
 } from '../../types';
-import { evaluateSentenceAgainstFacts } from '../security';
+import { evaluateSentenceAgainstFacts, evaluateFullDocumentAgainstFacts } from '../security';
 
 export async function generateTailoredDeliverables(
   profile: CandidateProfile,
@@ -41,19 +42,25 @@ function generateDeterministicTier1(
   const jobTitle = job.title;
   const company = job.company;
 
-  // 1. Tailored Headline
-  const tailoredHeadline = `${profile.name} | ${profile.targetCluster === 'healthcare' ? 'Registered Clinical Specialist' : profile.targetCluster === 'skilled_trades' ? 'Certified Technical Specialist' : profile.currentRole || profile.headline} — Targeting ${jobTitle} at ${company}`;
+  // 1. Truthful Headline: NEVER hardcode unconfirmed titles like "Registered Clinical Specialist"
+  // Uses strictly candidate's actual confirmed role or headline
+  const baseTitle = profile.currentRole || profile.headline || 'Professional';
+  const tailoredHeadline = `${profile.name} | ${baseTitle} — Targeting ${jobTitle} at ${company}`;
 
-  // 2. Truthfully Formulated Summary
-  const tailoredSummary = `${profile.summary} Bringing ${profile.yearsOfExperience}+ years of verifiable background. Targeting the ${jobTitle} opportunity at ${company} with strong alignment in ${profile.licensesAndCertifications.slice(0, 3).join(', ') || 'core operational deliverables'}. Fully committed to quality execution and compliance.`;
+  // 2. Truthfully Formulated Summary using only confirmed candidate facts
+  const candidateCreds = profile.licensesAndCertifications.length > 0
+    ? `Verified background in: ${profile.licensesAndCertifications.slice(0, 3).join(', ')}.`
+    : '';
 
-  // 3. Evidence-Grounded Bullet Points
+  const tailoredSummary = `${profile.summary} Bringing ${profile.yearsOfExperience}+ years of verifiable experience. Targeting the ${jobTitle} position at ${company}. ${candidateCreds} Focused on operational excellence and evidence-backed execution.`;
+
+  // 3. Evidence-Grounded Bullet Points derived strictly from confirmed facts
   const achievementFacts = confirmedFacts.filter(f => f.kind === 'achievement' || f.kind === 'employment');
   const bulletsSource = achievementFacts.length > 0 ? achievementFacts : confirmedFacts;
 
   const tailoredBullets: BulletPointDraft[] = bulletsSource.slice(0, 5).map((fact, index) => {
-    // Rephrase politely into active accomplishment format without changing numbers
-    const draftText = `Delivered key impact: ${fact.statement}. (Aligned with ${jobTitle} objectives at ${company}).`;
+    // Reformulate fact without altering metrics or asserting new claims
+    const draftText = `Delivered verified impact: ${fact.statement} (Aligned with ${jobTitle} objectives at ${company}).`;
     const check = evaluateSentenceAgainstFacts(draftText, confirmedFacts);
 
     return {
@@ -66,9 +73,8 @@ function generateDeterministicTier1(
     };
   });
 
-  // If no bullets exist, add at least one from summary
   if (tailoredBullets.length === 0) {
-    const fallbackText = `${profile.headline} with ${profile.yearsOfExperience} years of experience in ${profile.targetCluster}.`;
+    const fallbackText = `${profile.headline} with ${profile.yearsOfExperience} years of experience.`;
     const check = evaluateSentenceAgainstFacts(fallbackText, confirmedFacts);
     tailoredBullets.push({
       id: `bullet-fallback-${Date.now()}`,
@@ -79,58 +85,52 @@ function generateDeterministicTier1(
   }
 
   // 4. Evidence-Linked Cover Letter
+  const credentialsClause = profile.licensesAndCertifications.length > 0
+    ? `including credentials in ${profile.licensesAndCertifications.join(', ')}`
+    : 'in industry best practices';
+
   const coverLetter = `Dear Hiring Team at ${company},
 
-I am writing to express my strong enthusiasm for the ${jobTitle} position. With over ${profile.yearsOfExperience} years of substantive experience in ${profile.targetCluster.replace('_', ' ')}, my professional background closely mirrors the operational and technical requirements outlined in your job posting.
+I am writing to express my interest in the ${jobTitle} position. With over ${profile.yearsOfExperience} years of substantive experience in ${profile.targetCluster.replace('_', ' ')}, my background aligns with the core requirements outlined in your job posting.
 
-Throughout my career, I have prioritized empirical outcomes, verifiable results, and adherence to high industry standards. My verified background includes active credentials in ${profile.licensesAndCertifications.join(', ') || 'industry best practices'} and direct hands-on execution.
+Throughout my career, I have prioritized empirical outcomes, verifiable deliverables, and adherence to professional standards, ${credentialsClause}.
 
-Key highlights of what I bring to ${company}:
+Key verified accomplishments:
 ${tailoredBullets.slice(0, 3).map(b => `• ${b.draft}`).join('\n')}
 
-I welcome the opportunity to discuss how my qualifications directly support your team's goals for this role. Thank you for your consideration.
+I welcome the opportunity to discuss how my qualifications support ${company}'s operational goals. Thank you for your consideration.
 
 Sincerely,
 ${profile.name}
 ${profile.contact.email} ${profile.contact.phone ? `| ${profile.contact.phone}` : ''}`;
 
-  // 5. High-Impact Recruiter Outreach / WhatsApp Script (PRD v2.0 Flow C)
+  // 5. Outreach Pitch / SMS script (strictly truthful)
   const isTradeOrHospitality = profile.targetCluster === 'skilled_trades' || profile.targetCluster === 'retail_hospitality';
-  const outreachPitch = isTradeOrHospitality
-    ? `Hi ${company} Hiring Team! This is ${profile.name}. I saw your opening for ${jobTitle}. I have ${profile.yearsOfExperience}+ yrs exp, hold valid ${profile.licensesAndCertifications[0] || 'trade credentials'}, and am available immediately. Resume ready to share!`
-    : `Hi! I noticed the ${jobTitle} opening at ${company}. With ${profile.yearsOfExperience}+ years in ${profile.targetCluster.replace('_', ' ')} specializing in ${profile.licensesAndCertifications[0] || 'core execution'}, I'd love to connect and share my portfolio. Best, ${profile.name}`;
+  const credsSnippet = profile.licensesAndCertifications[0] ? `hold ${profile.licensesAndCertifications[0]}` : 'experienced background';
 
-  // 6. STAR Behavioral & Technical Interview Questions
+  const outreachPitch = isTradeOrHospitality
+    ? `Hi ${company} Hiring Team! This is ${profile.name}. I saw your opening for ${jobTitle}. I have ${profile.yearsOfExperience}+ yrs exp, ${credsSnippet}, and am ready to share my verified resume!`
+    : `Hi! I noticed the ${jobTitle} opening at ${company}. With ${profile.yearsOfExperience}+ years in ${profile.targetCluster.replace('_', ' ')} and ${credsSnippet}, I'd love to connect and share my work history. Best, ${profile.name}`;
+
+  // 6. STAR Behavioral Questions derived from actual candidate history
+  // (NO fake hardcoded assertions like "zero safety infractions" or "100% active standing"!)
+  const firstFactStatement = confirmedFacts[0]?.statement || 'complex professional deliverables';
   const interviewPrep: StarInterviewQuestion[] = [
     {
       id: 'star-1',
-      question: `Can you describe a situation where you had to solve a high-stakes challenge relevant to ${jobTitle}?`,
-      targetSkillOrCompetency: 'Problem Solving & Operational Execution',
-      suggestedAngle: 'Focus on measurable outcomes and how you mitigated risks.',
+      question: `Can you describe a key accomplishment from your background relevant to ${jobTitle}?`,
+      targetSkillOrCompetency: 'Professional Execution & Problem Solving',
+      suggestedAngle: 'Ground your answer directly in the project history confirmed in your evidence ledger.',
       talkingPoints: {
-        situation: `In my role as ${profile.currentRole || 'practitioner'}, our team encountered complex demands.`,
-        task: `I was responsible for maintaining quality while delivering on strict deadlines.`,
-        action: `I implemented systematic workflows, verified all inputs, and collaborated across departments.`,
-        result: `Successfully achieved operational goals with zero safety or compliance infractions.`,
-        reflection: `This reinforced the importance of clear evidence and repeatable standards.`
-      }
-    },
-    {
-      id: 'star-2',
-      question: `How do you stay up-to-date and maintain compliance with required standards like ${profile.licensesAndCertifications[0] || 'industry certifications'}?`,
-      targetSkillOrCompetency: 'Regulatory Compliance & Continuous Improvement',
-      suggestedAngle: 'Cite specific continuing education or procedural habits.',
-      talkingPoints: {
-        situation: `Operating in demanding professional environments with evolving requirements.`,
-        task: `Ensure personal and team alignment with latest safety, clinical, or technical codes.`,
-        action: `Routinely audit practices and complete certified renewal courses ahead of deadlines.`,
-        result: `Maintained 100% active standing and audit readiness across all duties.`,
-        reflection: `Proactive compliance saves time and prevents critical project delays.`
+        situation: `In my role as ${profile.currentRole || 'practitioner'}, I handled core responsibilities.`,
+        task: `I was responsible for: ${firstFactStatement}.`,
+        action: `I applied systematic procedures and verified all work before delivery.`,
+        result: `Successfully met organizational standards and delivered expected milestones.`,
+        reflection: `This experience confirmed the value of empirical standards and rigorous execution.`
       }
     }
   ];
 
-  // Determine template based on cluster
   let templateId: TailoredDocument['templateId'] = 'modern_ats';
   if (profile.targetCluster === 'healthcare') templateId = 'clinical_cv';
   else if (profile.targetCluster === 'skilled_trades') templateId = 'trades_ticket';
@@ -138,7 +138,20 @@ ${profile.contact.email} ${profile.contact.phone ? `| ${profile.contact.phone}` 
   else if (profile.targetCluster === 'finance_legal') templateId = 'executive_finance';
   else if (profile.targetCluster === 'creative_marketing') templateId = 'creative_portfolio';
 
-  const isFactGatePassed = !tailoredBullets.some(b => b.reviewStatus === 'BLOCKED');
+  // Evaluate the ENTIRE document against the Fact Gate
+  const fullDocEvaluation = evaluateFullDocumentAgainstFacts({
+    headline: tailoredHeadline,
+    summary: tailoredSummary,
+    bullets: tailoredBullets,
+    coverLetter,
+    outreachPitch,
+    interviewTalkingPoints: interviewPrep.flatMap(q => [
+      q.talkingPoints.situation,
+      q.talkingPoints.task,
+      q.talkingPoints.action,
+      q.talkingPoints.result
+    ])
+  }, confirmedFacts);
 
   return {
     id: `tailored-${job.id}-${Date.now()}`,
@@ -154,11 +167,12 @@ ${profile.contact.email} ${profile.contact.phone ? `| ${profile.contact.phone}` 
     interviewPrep,
     templateId,
     generatedAt: new Date().toISOString(),
-    isFactGatePassed
+    isFactGatePassed: fullDocEvaluation.isFactGatePassed
   };
 }
 
 // Tier 2: BYOK Google Gemini REST API Client
+// Secure key transmission via 'x-goog-api-key' Header (NEVER in URL query parameters!)
 async function generateWithGeminiBYOK(
   profile: CandidateProfile,
   confirmedFacts: EvidenceFact[],
@@ -169,7 +183,8 @@ async function generateWithGeminiBYOK(
   if (!apiKey) throw new Error('Gemini API key is required');
 
   const model = settings.selectedGeminiModel || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  // Safe URL: Key is omitted from query parameter to prevent logging in history, proxies, or headers
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const prompt = `
 You are F.R.I.D.A.Y, an elite career copilot and truthful resume drafter.
@@ -220,7 +235,10 @@ Respond strictly in valid JSON matching this structure:
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey // Header-based key passing prevents query string leaks
+    },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
@@ -274,7 +292,20 @@ Respond strictly in valid JSON matching this structure:
   else if (profile.targetCluster === 'finance_legal') templateId = 'executive_finance';
   else if (profile.targetCluster === 'creative_marketing') templateId = 'creative_portfolio';
 
-  const isFactGatePassed = !validatedBullets.some(b => b.reviewStatus === 'BLOCKED');
+  // Evaluate the ENTIRE document against the Fact Gate
+  const fullDocEvaluation = evaluateFullDocumentAgainstFacts({
+    headline: parsed.tailoredHeadline || profile.headline,
+    summary: parsed.tailoredSummary || profile.summary,
+    bullets: validatedBullets,
+    coverLetter: parsed.coverLetter,
+    outreachPitch: parsed.outreachPitch,
+    interviewTalkingPoints: starQuestions.flatMap(q => [
+      q.talkingPoints.situation,
+      q.talkingPoints.task,
+      q.talkingPoints.action,
+      q.talkingPoints.result
+    ])
+  }, confirmedFacts);
 
   return {
     id: `tailored-gemini-${job.id}-${Date.now()}`,
@@ -290,6 +321,6 @@ Respond strictly in valid JSON matching this structure:
     interviewPrep: starQuestions,
     templateId,
     generatedAt: new Date().toISOString(),
-    isFactGatePassed
+    isFactGatePassed: fullDocEvaluation.isFactGatePassed
   };
 }

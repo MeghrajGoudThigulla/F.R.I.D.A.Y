@@ -1,4 +1,5 @@
 // F.R.I.D.A.Y - Client-side IndexedDB Local Vault via Dexie
+// Conforming to PRD v3.0 §9 / PRD v4.0 (Encrypted settings, ciphertext-only integrity)
 import Dexie, { type Table } from 'dexie';
 import type {
   CandidateProfile,
@@ -56,10 +57,29 @@ export async function getOrInitSettings(): Promise<AISettings> {
   return DEFAULT_AI_SETTINGS;
 }
 
-// AES-GCM Encrypted Backup & Restore Utilities (FR-120 / R-12)
+// Passphrase strength validation
+export function validatePassphraseStrength(passphrase: string): { isValid: boolean; error?: string } {
+  if (passphrase.length < 8) {
+    return { isValid: false, error: 'Passphrase must be at least 8 characters long.' };
+  }
+  const hasLetter = /[a-zA-Z]/.test(passphrase);
+  const hasNumber = /[0-9]/.test(passphrase);
+  if (!hasLetter || !hasNumber) {
+    return { isValid: false, error: 'Passphrase must contain both letters and numbers for cryptographic security.' };
+  }
+  return { isValid: true };
+}
+
+// AES-GCM Encrypted Backup & Restore Utilities (PRD v3.0 FR-120 / R-12)
+// Protects candidate privacy: Checksum is calculated strictly over CIPHERTEXT, never plaintext!
 export async function exportEncryptedBackup(passphrase: string): Promise<string> {
+  const strength = validatePassphraseStrength(passphrase);
+  if (!strength.isValid) {
+    throw new Error(strength.error);
+  }
+
   const allData = {
-    schemaVersion: '1.0.0',
+    schemaVersion: '2.0.0',
     exportedAt: new Date().toISOString(),
     profiles: await db.profiles.toArray(),
     evidenceFacts: await db.evidenceFacts.toArray(),
@@ -74,7 +94,7 @@ export async function exportEncryptedBackup(passphrase: string): Promise<string>
   const encoder = new TextEncoder();
   const data = encoder.encode(jsonString);
 
-  // Derive key via PBKDF2
+  // Derive AES-GCM 256 key via PBKDF2 with 100,000 iterations
   const salt = window.crypto.getRandomValues(new Uint8Array(16));
   const keyMaterial = await window.crypto.subtle.importKey(
     'raw',
@@ -104,14 +124,14 @@ export async function exportEncryptedBackup(passphrase: string): Promise<string>
     data
   );
 
-  // Compute SHA-256 Checksum of the plain data for corruption verification
-  const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+  // Ciphertext-only SHA-256 checksum (zero plaintext data or plaintext hashes in the envelope)
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', encryptedContent);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const checksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const ciphertextChecksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
   const packageObj = {
-    version: 1,
-    checksum,
+    version: 2,
+    ciphertextChecksum,
     salt: Array.from(salt),
     iv: Array.from(iv),
     ciphertext: Array.from(new Uint8Array(encryptedContent)),
@@ -123,13 +143,25 @@ export async function exportEncryptedBackup(passphrase: string): Promise<string>
 export async function importAndRestoreBackup(backupJsonStr: string, passphrase: string): Promise<{ success: boolean; message: string }> {
   try {
     const parsed = JSON.parse(backupJsonStr);
-    if (!parsed.ciphertext || !parsed.salt || !parsed.iv || !parsed.checksum) {
+    if (!parsed.ciphertext || !parsed.salt || !parsed.iv) {
       throw new Error('Corrupted or invalid F.R.I.D.A.Y backup file structure.');
+    }
+
+    const ciphertext = new Uint8Array(parsed.ciphertext);
+
+    // Verify ciphertext checksum if present
+    if (parsed.ciphertextChecksum) {
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', ciphertext);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const computedChecksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+      if (computedChecksum !== parsed.ciphertextChecksum) {
+        throw new Error('Ciphertext checksum mismatch. Backup file is corrupted.');
+      }
     }
 
     const salt = new Uint8Array(parsed.salt);
     const iv = new Uint8Array(parsed.iv);
-    const ciphertext = new Uint8Array(parsed.ciphertext);
     const encoder = new TextEncoder();
 
     const keyMaterial = await window.crypto.subtle.importKey(
@@ -159,15 +191,6 @@ export async function importAndRestoreBackup(backupJsonStr: string, passphrase: 
       ciphertext
     );
 
-    // Verify Checksum
-    const hashBuffer = await window.crypto.subtle.digest('SHA-256', decrypted);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const computedChecksum = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-    if (computedChecksum !== parsed.checksum) {
-      throw new Error('Backup checksum mismatch. Data integrity compromised or corrupted.');
-    }
-
     const decoder = new TextDecoder();
     const data = JSON.parse(decoder.decode(decrypted));
 
@@ -190,13 +213,13 @@ export async function importAndRestoreBackup(backupJsonStr: string, passphrase: 
       if (data.earnFirstOrders?.length) await db.earnFirstOrders.bulkPut(data.earnFirstOrders);
     });
 
-    return { success: true, message: 'Vault restored successfully with verified checksum.' };
+    return { success: true, message: 'Vault restored successfully with verified ciphertext integrity.' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Decryption failed. Incorrect passphrase or corrupted backup.' };
   }
 }
 
-// Complete local delete (FR-005 / R-13)
+// Complete local delete (PRD v3.0 FR-005 / R-13)
 export async function clearAllLocalVault(): Promise<void> {
   await db.transaction('rw', [
     db.profiles,

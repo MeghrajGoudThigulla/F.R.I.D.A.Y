@@ -1,34 +1,40 @@
 # F.R.I.D.A.Y - Universal Career Copilot & Job Matcher
 
-F.R.I.D.A.Y is a privacy-first, local-vault career workspace and job matching platform. It runs client-side with zero server dependencies, allowing job seekers across technical, clinical, skilled trades, and corporate domains to evaluate role fit truthfully, generate evidence-backed resumes, and organize applications.
+F.R.I.D.A.Y is an evidence-first, privacy-focused career workspace and job-matching platform designed for workers across 7 occupational clusters (Software, Healthcare, Skilled Trades, Education/Public, Finance/Corporate, Retail/Hospitality, and Creative). It operates entirely client-side with zero server overhead and zero cloud maintenance costs.
 
-## Key Features
+---
 
-- **Local-First Privacy Vault:** All resume text, applicant data, and application tracking state stay in IndexedDB inside the user's browser.
-- **Truthful Evidence Ledger:** Strict fact-checking gate ensures drafted bullets only cite candidate-confirmed experience and metrics ("Reformulate, never fabricate").
-- **Hard Gate Eligibility Checking:** Evaluates legal, clinical, licensure, and clearance requirements independently (Pass / Fail / Unknown) rather than averaging them away.
-- **4-Pillar Scoring Model:** Explains job fit across Skill Coverage (40%), Experience Alignment (25%), Preference Alignment (20%), and Evidence Strength (15%).
-- **Multi-Domain Taxonomy:** Includes deep rule packs for Software & Engineering, Healthcare & Nursing, and Skilled Trades (with voice/speech intake), plus universal packs for Education, Finance, Retail, and Design.
-- **Single-Column ATS Exporter:** Exports clean ATS-compatible PDFs and editable Word DOCX files with text-layer checks and federal USAJobs 2-page limit validation.
-- **3-Tier AI Engine:**
-  - **Tier 1:** 100% free, deterministic in-browser NLP and rule-based generation requiring no API keys.
-  - **Tier 2:** Guided BYOK (Bring Your Own Key) for Google Gemini (`gemini-2.5-flash` or `gemini-1.5-flash`).
-  - **Tier 3:** Cloud credit proxy readiness for non-technical users.
-- **Earn-First Pilot Portal:** Built-in workflow for delivering verified resume packs ($9–$19) to pilot clients for zero-capital cash flow.
-- **Career CRM Kanban:** Visual application tracking with follow-up alerts, salary offer logs, and recruiter contact management.
+## Key Differentiators & Production Architecture
+
+- **Deterministic Word-Boundary Fact Gate:** Enforces *"Reformulate, never fabricate."* Checks quantitative metrics (`35%`, `$1.2M`, `15,000`) and high-risk credentials (`RN`, `CPA`, `CDL`, `Clearances`) using strict word boundaries—preventing substring false passes (e.g. `5` never matches `15`, `rn` never matches `concern`). The gate inspects the entire document payload (headline, summary, bullets, cover letter, outreach, and STAR answers) and blocks export if unverified claims exist.
+- **Strict Hard Gate Eligibility:** Evaluates mandatory licensure, work authorization, and security clearances independently as **Pass / Fail / Unknown**. Unknown gates are surfaced prominently and never silently passed or averaged into a fit score.
+- **Cryptographic License Verification:** Pro and Coach entitlements are cryptographically verified using Web Crypto HMAC-SHA256 signatures (`<payload>.<signature>`) rather than insecure string prefix checks.
+- **Closed-Loop PDF Text-Layer Verification:** After compiling PDFs with `jsPDF`, the binary text layer is re-extracted and inspected using `pdfjs-dist` to verify candidate contact details, linear reading order, and federal USAJobs 2-page rules with month/year dates and hours-per-week compliance markers.
+- **Header-Based API Key Handling:** Google Gemini BYOK keys are transmitted strictly via the `x-goog-api-key` HTTP header, completely avoiding URL query parameters that leak into browser history, proxies, or server logs.
+- **Ciphertext-Only Encrypted Backup:** AES-GCM 256-bit vault backup derived with PBKDF2 (100,000 iterations). Enforces passphrase strength (letters + numbers, 8+ chars) and stores checksums strictly over ciphertext to eliminate plaintext metadata leakage.
+- **Voice-to-Resume Intake:** Built-in speech-guided intake wizard for non-desk and blue-collar trades workers who do not have an existing resume file.
+- **Earn-First Pilot Hub:** Built-in operational queue to log, tailor, and deliver $9–$19 human-verified application packs for early cash flow.
+
+---
 
 ## Tech Stack
 
 - **Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4
-- **Storage:** Dexie.js (IndexedDB) with AES-GCM encrypted backup/restore
-- **Document Processing:** PDF.js, Mammoth.js, docx, jsPDF
+- **Local Vault:** Dexie.js (IndexedDB) with Web Crypto API
+- **Document Processing:** PDF.js, Mammoth.js, jsPDF, docx
+- **Testing:** Vitest
 - **Icons:** Lucide React
+
+---
 
 ## Getting Started
 
 ```bash
 # Install dependencies
 npm install
+
+# Run automated test suites (22 unit & integration tests)
+npm test
 
 # Run local development server
 npm run dev
@@ -37,10 +43,15 @@ npm run dev
 npm run build
 ```
 
-## Deployment ($0 Fixed Hosting)
+---
 
-F.R.I.D.A.Y is structured as a static single-page application compatible with Cloudflare Pages, Vercel, or static CDN hosting.
+## Taxonomy & License Attributions
+
+1. **O*NET Database:** This tool incorporates information from the **O*NET 31.0 Database** by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA). Used under the CC BY 4.0 license. O*NET® is a trademark of USDOL/ETA.
+2. **ESCO Classification:** This service uses the **ESCO classification** of the European Commission (version 1.2, covering 3,039 occupations and 13,939 skills across 28 languages).
+
+---
 
 ## License
 
-MIT License
+MIT License - Copyright (c) 2026 Thigulla Meghraj Goud

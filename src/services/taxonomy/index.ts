@@ -1,5 +1,15 @@
 // F.R.I.D.A.Y - Multi-Domain Occupational Taxonomy & O*NET / ESCO Ontology Engine
+// Attribution:
+// 1. O*NET Database 31.0 by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA).
+//    Used under the CC BY 4.0 license. O*NET® is a trademark of USDOL/ETA.
+// 2. European Commission ESCO Classification (v1.2).
+//    "This service uses the ESCO classification of the European Commission."
 import type { CareerClusterId, CareerClusterInfo, GateType } from '../../types';
+
+export const TAXONOMY_ATTRIBUTIONS = {
+  onet: 'This tool incorporates information from the O*NET 31.0 Database by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA). Used under the CC BY 4.0 license. O*NET® is a trademark of USDOL/ETA.',
+  esco: 'This service uses the ESCO classification of the European Commission (3,039 occupations and 13,939 skills).'
+};
 
 export const CAREER_CLUSTERS: Record<CareerClusterId, CareerClusterInfo> = {
   software_data: {
@@ -34,7 +44,7 @@ export const CAREER_CLUSTERS: Record<CareerClusterId, CareerClusterInfo> = {
     name: 'Education, Academia & Public Sector',
     tagline: 'K-12 Teachers, University Faculty, Researchers & Civil Servants',
     iconName: 'GraduationCap',
-    isDeepPack: false, // Generic pack in MVP, ships with truthful generic labeling
+    isDeepPack: false,
     keyCredentials: ['State Teaching Credential', 'Praxis / CTET', 'USAJobs KSA Compliance (Max 2 Pages)', 'Publications / Grants'],
     docArchetype: 'Federal USAJobs 2-Page Resume / Academic CV'
   },
@@ -67,27 +77,67 @@ export const CAREER_CLUSTERS: Record<CareerClusterId, CareerClusterInfo> = {
   }
 };
 
+// Comprehensive Domain Skill Vocabularies across all 7 clusters (fixing non-tech scoring skew)
+export const DOMAIN_SKILL_VOCABULARIES: Record<CareerClusterId, string[]> = {
+  software_data: [
+    'react', 'typescript', 'javascript', 'node.js', 'python', 'sql', 'docker', 'kubernetes',
+    'aws', 'git', 'ci/cd', 'graphql', 'rest api', 'microservices', 'postgresql', 'redis',
+    'mongodb', 'linux', 'golang', 'rust', 'c++', 'java', 'spring boot', 'terraform', 'agile'
+  ],
+  healthcare: [
+    'triage', 'patient assessment', 'vital signs', 'iv therapy', 'phlebotomy', 'medication administration',
+    'epic emr', 'cerner', 'telemetry', 'wound care', 'infection control', 'hipaa', 'bls', 'acls', 'pals',
+    'ccrn', 'icu', 'emergency room', 'medical-surgical', 'palliative care', 'ventilator management', 'ehr charting'
+  ],
+  skilled_trades: [
+    'blueprint reading', 'electrical wiring', 'conduit bending', 'hvac maintenance', 'refrigerant recovery',
+    'preventative maintenance', 'plc programming', 'cnc machining', 'mig welding', 'tig welding', 'smaw',
+    'osha-10', 'osha-30', 'epa 608', 'cdl class a', 'cdl class b', 'forklift operation', 'hydraulics',
+    'pneumatics', 'lockout/tagout', 'rigging', 'troubleshooting', 'hand tools', 'multimeter'
+  ],
+  education_public: [
+    'curriculum development', 'lesson planning', 'classroom management', 'iep', 'differentiated instruction',
+    'student assessment', 'pedagogy', 'stem', 'educational technology', 'title i', 'accreditation',
+    'grant writing', 'peer review', 'academic advising', 'faculty governance', 'special education', 'state standards'
+  ],
+  finance_legal: [
+    'financial modeling', 'gaap', 'financial analysis', 'auditing', 'accounts payable', 'accounts receivable',
+    'tax compliance', 'sec reporting', 'sarbanes-oxley', 'internal controls', 'general ledger', 'quickbooks',
+    'sap erp', 'oracle netsuite', 'variance analysis', 'contract review', 'due diligence', 'risk assessment', 'cpa'
+  ],
+  retail_hospitality: [
+    'inventory management', 'pos systems', 'cash handling', 'guest service', 'merchandising', 'shift scheduling',
+    'servsafe', 'food safety', 'food preparation', 'banquet service', 'upselling', 'store operations',
+    'loss prevention', 'customer retention', 'conflict resolution', 'table service', 'haccp'
+  ],
+  creative_marketing: [
+    'figma', 'adobe photoshop', 'adobe illustrator', 'adobe indesign', 'adobe premiere pro', 'after effects',
+    'copywriting', 'seo', 'content strategy', 'brand guidelines', 'ui design', 'ux research', 'wireframing',
+    'roas', 'google analytics', 'email marketing', 'social media management', 'storyboarding', 'typography'
+  ]
+};
+
 // Curated O*NET / ESCO Skill Aliases & Normalization
 export const SKILL_NORMALIZATION_MAP: Record<string, string[]> = {
   // Software / Tech
   'react': ['reactjs', 'react.js', 'react native', 'react 18', 'react 19'],
   'typescript': ['ts', 'typescript 5', 'strict typescript'],
-  'javascript': ['js', 'es6', 'ecmascript', 'modern javascript'],
+  'javascript': ['js', 'es6', 'ecmascript'],
   'node.js': ['nodejs', 'node', 'express', 'nest.js', 'nestjs'],
   'python': ['python3', 'py', 'django', 'fastapi', 'flask'],
-  'sql': ['postgresql', 'postgres', 'mysql', 'sqlite', 'rdbms', 'sql queries'],
-  'docker': ['containerization', 'containers', 'docker compose', 'dockerfile'],
-  'kubernetes': ['k8s', 'helm', 'k8s clusters'],
-  'aws': ['amazon web services', 's3', 'ec2', 'lambda', 'dynamodb', 'cloudwatch'],
-  'git': ['github', 'gitlab', 'git version control', 'version control'],
-  'ci/cd': ['github actions', 'jenkins', 'gitlab ci', 'continuous integration'],
+  'sql': ['postgresql', 'postgres', 'mysql', 'sqlite', 'rdbms'],
+  'docker': ['containerization', 'containers', 'docker compose'],
+  'kubernetes': ['k8s', 'helm'],
+  'aws': ['amazon web services', 'ec2', 's3', 'lambda'],
+  'git': ['github', 'gitlab', 'git version control'],
+  'ci/cd': ['github actions', 'jenkins', 'gitlab ci'],
 
   // Healthcare
   'bls': ['basic life support', 'aha bls', 'cpr bls'],
   'acls': ['advanced cardiovascular life support', 'aha acls'],
   'pals': ['pediatric advanced life support'],
-  'rn license': ['registered nurse license', 'enlc', 'compact nursing license', 'state rn board'],
-  'epic emr': ['epic systems', 'epic', 'epic charting', 'hyperspace'],
+  'rn': ['registered nurse', 'enlc', 'compact nursing license', 'state rn board'],
+  'epic emr': ['epic systems', 'epic', 'epic charting'],
   'cerner': ['cerner millennium', 'cerner ehr'],
   'telemetry': ['telemetry monitoring', 'cardiac telemetry', 'ekg interpretation'],
   'patient assessment': ['triage', 'head to toe assessment', 'vitals monitoring'],
@@ -95,12 +145,12 @@ export const SKILL_NORMALIZATION_MAP: Record<string, string[]> = {
   // Skilled Trades
   'osha-10': ['osha 10', 'osha 10-hour', 'osha construction'],
   'osha-30': ['osha 30', 'osha 30-hour general industry'],
-  'epa 608': ['epa universal', 'epa type ii', 'epa section 608', 'refrigerant handling'],
+  'epa 608': ['epa universal', 'epa type ii', 'epa section 608'],
   'cdl class a': ['commercial drivers license class a', 'class a cdl', 'tractor trailer'],
   'cdl class b': ['class b cdl'],
-  'hvac maintenance': ['refrigeration troubleshooting', 'air conditioning diagnostics', 'compressor replacement'],
+  'hvac maintenance': ['refrigeration troubleshooting', 'air conditioning diagnostics'],
   'plc programming': ['programmable logic controller', 'allen bradley', 'siemens s7'],
-  'mig/tig welding': ['shielded metal arc', 'flux core', 'welding certification', 'aws d1.1']
+  'mig welding': ['gmaw', 'mig welder', 'shielded metal arc']
 };
 
 export interface HardGateRule {
@@ -157,7 +207,6 @@ export const HARD_GATE_RULES: HardGateRule[] = [
   }
 ];
 
-// Helper to normalize and match skills
 export function normalizeSkill(skill: string): string {
   const clean = skill.trim().toLowerCase();
   for (const [canonical, aliases] of Object.entries(SKILL_NORMALIZATION_MAP)) {
